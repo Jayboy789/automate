@@ -1,0 +1,7 @@
+{
+  "agentId": "Jaydo",
+  "agentKey": "asd",
+  "serverUrl": "http://localhost:5000",
+  "heartbeatInterval": 30000,
+  "autoRegister": true
+}

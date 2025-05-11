@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AutoMate Agent</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --primary-light: #3b82f6;
+      --primary-dark: #1d4ed8;
+      --success-color: #10b981;
+      --error-color: #ef4444;
+      --warning-color: #f59e0b;
+      --text-color: #1f2937;
+      --text-light: #6b7280;
+      --bg-color: #f9fafb;
+      --bg-light: #ffffff;
+      --border-color: #e5e7eb;
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      font-size: 14px;
+      line-height: 1.5;
+      overflow: hidden;
+    }
+    
+    .container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    
+    /* Header */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px;
+      background-color: var(--bg-light);
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .logo {
+      display: flex;
+      align-items: center;
+    }
+    
+    .logo-icon {
+      font-size: 24px;
+      color: var(--primary-color);
+      margin-right: 12px;
+    }
+    
+    .logo-text {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    
+    .version {
+      font-size: 12px;
+      color: var(--text-light);
+      margin-left: 8px;
+    }
+    
+    .status {
+      display: flex;
+      align-items: center;
+    }
+    
+    .status-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+    
+    .status-connected {
+      background-color: var(--success-color);
+    }
+    
+    .status-disconnected {
+      background-color: var(--error-color);
+    }
+    
+    .status-connecting {
+      background-color: var(--warning-color);
+    }
+    
+    .status-text {
+      font-weight: 500;
+    }
+    
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background-color: var(--bg-light);
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .tab {
+      padding: 12px 16px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      font-weight: 500;
+    }
+    
+    .tab:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+    
+    .tab.active {
+      border-bottom-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+    
+    /* Content */
+    .content {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+    }
+    
+    .tab-content {
+      display: none;
+      height: 100%;
+      overflow: auto;
+      padding: 16px;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
+    /* Dashboard */
+    .status-card {
+      background-color: var(--bg-light);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    
+    .info-item {
+      background-color: var(--bg-light);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      padding: 16px;
+    }
+    
+    .info-label {
+      color: var(--text-light);
+      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .info-value {
+      font-size: 16px;
+      font-weight: 500;
+      word-break: break-all;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    
+    .stat-item {
+      background-color: var(--bg-light);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      padding: 16px;
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 24px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    
+    .stat-label {
+      color: var(--text-light);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+    
+    /* Jobs */
+    .job-list {
+      background-color: var(--bg-light);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+    }
+    
+    .job-item {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    .job-item:last-child {
+      border-bottom: none;
+    }
+    
+    .job-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    
+    .job-id {
+      font-weight: 600;
+    }
+    
+    .job-time {
+      color: var(--text-light);
+      font-size: 12px;
+    }
+    
+    .job-status {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    
+    .job-status-queued {
+      background-color: #e5e7eb;
+      color: #374151;
+    }
+    
+    .job-status-running {
+      background-color: #dbeafe;
+      color: #1e40af;
+    }
+    
+    .job-status-completed {
+      background-color: #d1fae5;
+      color: #065f46;
+    }
+    
+    .job-status-failed {
+      background-color: #fee2e2;
+      color: #991b1b;
+    }
+    
+    .job-details {
+      margin-top: 8px;
+    }
+    
+    .job-script {
+      background-color: #f3f4f6;
+      padding: 8px;
+      border-radius: 4px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow: auto;
+    }
+    
+    .job-output {
+      background-color: #f3f4f6;
+      padding: 8px;
+      border-radius: 4px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow: auto;
+    }
+    
+    .job-error {
+      background-color: #fee2e2;
+      padding: 8px;
+      border-radius: 4px;
+      color: #991b1b;
+      font-family: monospace;
+      white-space: pre-wrap;
+      max-height: 200px;
+      overflow: auto;
+    }
+    
+    /* Settings */
+    .settings-form {
+      background-color: var(--bg-light);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      padding: 16px;
+    }
+    
+    .form-group {
+      margin-bottom: 16px;
+    }
+    
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+    
+    .form-group input, .form-group select, .form-group textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 14px;
+    }
+    
+    .form-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
+    
+    /* Logs */
+    .logs-container {
+      background-color: var(--bg-light);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      padding: 16px;
+      height: calc(100% - 32px);
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .logs-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    
+    .logs-content {
+      flex: 1;
+      background-color: #1f2937;
+      color: #f9fafb;
+      font-family: monospace;
+      padding: 12px;
+      border-radius: 4px;
+      overflow: auto;
+      white-space: pre-wrap;
+    }
+    
+    /* Test Script */
+    .test-script-container {
+      background-color: var(--bg-light);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      padding: 16px;
+      height: calc(100% - 32px);
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .test-script-editor {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      flex: 1;
+    }
+    
+    .test-script-actions {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 16px;
+    }
+    
+    .test-script-output {
+      margin-top: 16px;
+    }
+    
+    /* Buttons */
+    .btn {
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-weight: 500;
+      font-size: 14px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary {
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+    }
+    
+    .btn-primary:hover {
+      background-color: var(--primary-dark);
+    }
+    
+    .btn-secondary {
+      background-color: #fff;
+      color: var(--text-color);
+      border: 1px solid var(--border-color);
+    }
+    
+    .btn-secondary:hover {
+      background-color: #f3f4f6;
+    }
+    
+    .btn-success {
+      background-color: var(--success-color);
+      color: white;
+      border: none;
+    }
+    
+    .btn-success:hover {
+      background-color: #059669;
+    }
+    
+    .btn-danger {
+      background-color: var(--error-color);
+      color: white;
+      border: none;
+    }
+    
+    .btn-danger:hover {
+      background-color: #dc2626;
+    }
+    
+    .btn-icon {
+      margin-right: 8px;
+    }
+    
+    /* Footer */
+    .footer {
+      padding: 16px;
+      background-color: var(--bg-light);
+      border-top: 1px solid var(--border-color);
+      text-align: center;
+      color: var(--text-light);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <div class="logo-icon">
+          <i class="fas fa-robot"></i>
+        </div>
+        <div class="logo-text">
+          AutoMate Agent
+          <span class="version" id="version">v1.0.0</span>
+        </div>
+      </div>
+      <div class="status">
+        <div class="status-indicator status-disconnected" id="status-indicator"></div>
+        <div class="status-text" id="status-text">Disconnected</div>
+      </div>
+    </header>
+    
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active" data-tab="dashboard">Dashboard</div>
+      <div class="tab" data-tab="jobs">Jobs</div>
+      <div class="tab" data-tab="test-script">Test Script</div>
+      <div class="tab" data-tab="settings">Settings</div>
+      <div class="tab" data-tab="logs">Logs</div>
+    </div>
+    
+    <!-- Content -->
+    <div class="content">
+      <!-- Dashboard Tab -->
+      <div class="tab-content active" id="dashboard-content">
+        <h2>Agent Dashboard</h2>
+        
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="info-label">Agent ID</div>
+            <div class="info-value" id="agent-id">Loading...</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Server URL</div>
+            <div class="info-value" id="server-url">Loading...</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Agent Name</div>
+            <div class="info-value" id="agent-name">Loading...</div>
+          </div>
+          <div class="info-item">
+            <div class="info-label">Platform</div>
+            <div class="info-value" id="agent-platform">Loading...</div>
+          </div>
+        </div>
+        
+        <h3>System Stats</h3>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-value" id="cpu-usage">0%</div>
+            <div class="stat-label">CPU Usage</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="memory-usage">0%</div>
+            <div class="stat-label">Memory Usage</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="jobs-count">0</div>
+            <div class="stat-label">Jobs Executed</div>
+          </div>
+        </div>
+        
+        <div class="status-card">
+          <button id="reconnect-btn" class="btn btn-primary">
+            <i class="fas fa-sync btn-icon"></i>
+            Reconnect to Server
+          </button>
+        </div>
+      </div>
+      
+      <!-- Jobs Tab -->
+      <div class="tab-content" id="jobs-content">
+        <h2>Recent Jobs</h2>
+        
+        <div id="jobs-list" class="job-list">
+          <div class="job-item">
+            <div class="job-header">
+              <div class="job-id">No jobs executed yet</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Test Script Tab -->
+      <div class="tab-content" id="test-script-content">
+        <h2>Test Script</h2>
+        
+        <div class="test-script-container">
+          <div class="test-script-editor">
+            <div class="form-group">
+              <label for="script-language">Script Language</label>
+              <select id="script-language">
+                <option value="PowerShell">PowerShell</option>
+                <option value="Python">Python</option>
+                <option value="JavaScript">JavaScript</option>
+                <option value="Bash">Bash</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label for="script-content">Script Content</label>
+              <textarea id="script-content" rows="10"></textarea>
+            </div>
+            
+            <div class="form-group">
+              <label for="script-parameters">Parameters (JSON)</label>
+              <textarea id="script-parameters" rows="5" placeholder='{"param1": "value1", "param2": "value2"}'></textarea>
+            </div>
+          </div>
+          
+          <div class="test-script-actions">
+            <button id="execute-script-btn" class="btn btn-primary">
+              <i class="fas fa-play btn-icon"></i>
+              Execute Script
+            </button>
+          </div>
+          
+          <div class="test-script-output" id="test-script-output" style="display: none;">
+            <h3>Output</h3>
+            <pre id="script-output" class="job-output"></pre>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Settings Tab -->
+      <div class="tab-content" id="settings-content">
+        <h2>Settings</h2>
+        
+        <div class="settings-form">
+          <div class="form-group">
+            <label for="setting-name">Agent Name</label>
+            <input type="text" id="setting-name" placeholder="Enter agent name">
+          </div>
+          
+          <div class="form-group">
+            <label for="setting-server-url">Server URL</label>
+            <input type="text" id="setting-server-url" placeholder="http://localhost:5000">
+          </div>
+          
+          <div class="form-actions">
+            <button id="save-settings-btn" class="btn btn-success">
+              <i class="fas fa-save btn-icon"></i>
+              Save Settings
+            </button>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Logs Tab -->
+      <div class="tab-content" id="logs-content">
+        <h2>Agent Logs</h2>
+        
+        <div class="logs-container">
+          <div class="logs-header">
+            <button id="refresh-logs-btn" class="btn btn-secondary">
+              <i class="fas fa-sync btn-icon"></i>
+              Refresh Logs
+            </button>
+          </div>
+          
+          <div class="logs-content" id="logs-content-area">
+            Loading logs...
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Footer -->
+    <footer class="footer">
+      &copy; 2025 AutoMate. All rights reserved.
+    </footer>
+  </div>
+  
+  <script>
+    // DOM Elements
+    const statusIndicator = document.getElementById('status-indicator');
+    const statusText = document.getElementById('status-text');
+    const versionElement = document.getElementById('version');
+    const agentIdElement = document.getElementById('agent-id');
+    const serverUrlElement = document.getElementById('server-url');
+    const agentNameElement = document.getElementById('agent-name');
+    const agentPlatformElement = document.getElementById('agent-platform');
+    const cpuUsageElement = document.getElementById('cpu-usage');
+    const memoryUsageElement = document.getElementById('memory-usage');
+    const jobsCountElement = document.getElementById('jobs-count');
+    const jobsListElement = document.getElementById('jobs-list');
+    const reconnectBtn = document.getElementById('reconnect-btn');
+    const settingNameInput = document.getElementById('setting-name');
+    const settingServerUrlInput = document.getElementById('setting-server-url');
+    const saveSettingsBtn = document.getElementById('save-settings-btn');
+    const refreshLogsBtn = document.getElementById('refresh-logs-btn');
+    const logsContentArea = document.getElementById('logs-content-area');
+    const scriptLanguageSelect = document.getElementById('script-language');
+    const scriptContentInput = document.getElementById('script-content');
+    const scriptParametersInput = document.getElementById('script-parameters');
+    const executeScriptBtn = document.getElementById('execute-script-btn');
+    const testScriptOutput = document.getElementById('test-script-output');
+    const scriptOutputArea = document.getElementById('script-output');
+    
+    // Tab Navigation
+    const tabs = document.querySelectorAll('.tab');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        // Remove active class from all tabs and contents
+        tabs.forEach(t => t.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+        
+        // Add active class to clicked tab and corresponding content
+        tab.classList.add('active');
+        const tabId = tab.getAttribute('data-tab');
+        document.getElementById(`${tabId}-content`).classList.add('active');
+      });
+    });
+    
+    // Store for recent jobs
+    const recentJobs = [];
+    let totalJobsCount = 0;
+    
+    // Load agent info
+    async function loadAgentInfo() {
+      try {
+        const agentInfo = await window.electronAPI.getAgentInfo();
+        
+        agentIdElement.textContent = agentInfo.agentId;
+        serverUrlElement.textContent = agentInfo.serverUrl;
+        agentNameElement.textContent = agentInfo.name;
+        agentPlatformElement.textContent = agentInfo.platform;
+        versionElement.textContent = `v${agentInfo.version}`;
+        
+        // Update settings form
+        settingNameInput.value = agentInfo.name;
+        settingServerUrlInput.value = agentInfo.serverUrl;
+      } catch (error) {
+        console.error('Error loading agent info:', error);
+      }
+    }
+    
+    // Update connection status
+    function updateConnectionStatus(status) {
+      statusIndicator.className = 'status-indicator';
+      
+      if (status === 'connected') {
+        statusIndicator.classList.add('status-connected');
+        statusText.textContent = 'Connected';
+      } else if (status === 'connecting') {
+        statusIndicator.classList.add('status-connecting');
+        statusText.textContent = 'Connecting...';
+      } else {
+        statusIndicator.classList.add('status-disconnected');
+        statusText.textContent = 'Disconnected';
+      }
+    }
+    
+    // Format timestamp
+    function formatTimestamp(timestamp) {
+      const date = new Date(timestamp);
+      return date.toLocaleString();
+    }
+    
+    // Update job list
+    function updateJobsList() {
+      if (recentJobs.length === 0) {
+        jobsListElement.innerHTML = `
+          <div class="job-item">
+            <div class="job-header">
+              <div class="job-id">No jobs executed yet</div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+      
+      jobsListElement.innerHTML = '';
+      
+      recentJobs.forEach(job => {
+        const jobItem = document.createElement('div');
+        jobItem.className = 'job-item';
+        
+        const statusClass = job.status === 'completed' ? 'completed' : 
+                            job.status === 'running' ? 'running' :
+                            job.status === 'failed' ? 'failed' : 'queued';
+        
+        jobItem.innerHTML = `
+          <div class="job-header">
+            <div class="job-id">${job.jobId}</div>
+            <span class="job-status job-status-${statusClass}">${job.status}</span>
+          </div>
+          <div class="job-time">${formatTimestamp(job.timestamp)}</div>
+          <div class="job-details">
+            <h4>Script:</h4>
+            <pre class="job-script">${job.script.length > 200 ? job.script.substring(0, 200) + '...' : job.script}</pre>
+            ${job.output ? `<h4>Output:</h4><pre class="job-output">${job.output}</pre>` : ''}
+            ${job.error ? `<h4>Error:</h4><pre class="job-error">${job.error}</pre>` : ''}
+          </div>
+        `;
+        
+        jobsListElement.appendChild(jobItem);
+      });
+    }
+    
+    // Load logs
+    async function loadLogs() {
+      try {
+        const logs = await window.electronAPI.getLogs();
+        logsContentArea.textContent = logs;
+        logsContentArea.scrollTop = logsContentArea.scrollHeight;
+      } catch (error) {
+        console.error('Error loading logs:', error);
+        logsContentArea.textContent = 'Error loading logs';
+      }
+    }
+    
+    // Event Handlers
+    reconnectBtn.addEventListener('click', async () => {
+      try {
+        updateConnectionStatus('connecting');
+        await window.electronAPI.reconnect();
+      } catch (error) {
+        console.error('Error reconnecting:', error);
+        updateConnectionStatus('disconnected');
+      }
+    });
+    
+    saveSettingsBtn.addEventListener('click', async () => {
+      try {
+        const settings = {
+          name: settingNameInput.value,
+          serverUrl: settingServerUrlInput.value
+        };
+        
+        await window.electronAPI.updateSettings(settings);
+        alert('Settings saved successfully');
+        
+        // Update UI
+        agentNameElement.textContent = settings.name;
+        serverUrlElement.textContent = settings.serverUrl;
+      } catch (error) {
+        console.error('Error saving settings:', error);
+        alert('Error saving settings');
+      }
+    });
+    
+    refreshLogsBtn.addEventListener('click', loadLogs);
+    
+    executeScriptBtn.addEventListener('click', async () => {
+      try {
+        const language = scriptLanguageSelect.value;
+        const script = scriptContentInput.value;
+        
+        if (!script) {
+          alert('Please enter a script');
+          return;
+        }
+        
+        let parameters = {};
+        if (scriptParametersInput.value.trim()) {
+          try {
+            parameters = JSON.parse(scriptParametersInput.value);
+          } catch (error) {
+            alert('Invalid JSON for parameters');
+            return;
+          }
+        }
+        
+        executeScriptBtn.disabled = true;
+        executeScriptBtn.innerHTML = '<i class="fas fa-spinner fa-spin btn-icon"></i> Executing...';
+        
+        const result = await window.electronAPI.executeTestScript(script, parameters, language);
+        
+        // Display output
+        testScriptOutput.style.display = 'block';
+        
+        if (result.success) {
+          scriptOutputArea.className = 'job-output';
+          scriptOutputArea.textContent = result.output;
+        } else {
+          scriptOutputArea.className = 'job-error';
+          scriptOutputArea.textContent = result.error;
+        }
+      } catch (error) {
+        console.error('Error executing script:', error);
+        alert('Error executing script');
+      } finally {
+        executeScriptBtn.disabled = false;
+        executeScriptBtn.innerHTML = '<i class="fas fa-play btn-icon"></i> Execute Script';
+      }
+    });
+    
+    // Socket Events
+    window.electronAPI.onConnectionStatus((status) => {
+      updateConnectionStatus(status.status);
+    });
+    
+    window.electronAPI.onSystemStats((stats) => {
+      cpuUsageElement.textContent = `${stats.cpuUsage}%`;
+      memoryUsageElement.textContent = `${stats.memoryUsage}%`;
+    });
+    
+    window.electronAPI.onJobReceived((job) => {
+      const newJob = {
+        jobId: job.jobId,
+        script: job.script,
+        parameters: job.parameters,
+        status: 'running',
+        timestamp: Date.now()
+      };
+      
+      recentJobs.unshift(newJob);
+      if (recentJobs.length > 10) {
+        recentJobs.pop();
+      }
+      
+      updateJobsList();
+    });
+    
+    window.electronAPI.onJobCompleted((result) => {
+      const job = recentJobs.find(j => j.jobId === result.jobId);
+      
+      if (job) {
+        job.status = result.success ? 'completed' : 'failed';
+        job.output = result.output;
+        job.error = result.error;
+        
+        updateJobsList();
+      }
+      
+      totalJobsCount++;
+      jobsCountElement.textContent = totalJobsCount;
+    });
+    
+    // Initialize
+    loadAgentInfo();
+    loadLogs();
+    updateConnectionStatus('disconnected');
+    updateJobsList();
+  </script>
+</body>
+</html> 
