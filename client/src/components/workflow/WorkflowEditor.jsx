@@ -47,6 +47,7 @@ const WorkflowEditor = () => {
   const [unsavedChanges, setUnsavedChanges] = useState(false);
   
   // Load workflow data
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const loadWorkflow = async () => {
       setIsLoading(true);
@@ -99,6 +100,7 @@ const WorkflowEditor = () => {
   }, [id]);
   
   // Listen for workflow execution updates
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!workflow) return;
     

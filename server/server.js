@@ -18,7 +18,9 @@ console.log("Express app and HTTP server created");
 console.log("Applying middleware...");
 app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
-  credentials: true
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -50,6 +52,10 @@ app.use('/api/job', jobRoutes); // Some endpoints require authentication, handle
 app.use('/api/executions', authenticateToken, executionRoutes);
 
 // Basic route to test server
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', message: 'AutoMate API is running', timestamp: new Date() });
+});
+
 app.get('/', (req, res) => {
   res.send('AutoMate API is running');
 });
@@ -93,7 +99,8 @@ try {
     cors: {
       origin: process.env.CLIENT_URL || 'http://localhost:3000',
       methods: ['GET', 'POST', 'PUT', 'DELETE'],
-      credentials: true
+      credentials: true,
+      allowedHeaders: ['Content-Type', 'Authorization']
     },
     pingTimeout: 60000,            // Increase ping timeout to 60 seconds
     connectTimeout: 45000,         // Increase connection timeout to 45 seconds
@@ -159,7 +166,6 @@ try {
   console.error("Error setting up Socket.io:", error);
 }
 
-console.log("Setting up Connect DB function...");
 // Connect to MongoDB
 const connectDB = async () => {
   try {
@@ -171,9 +177,7 @@ const connectDB = async () => {
       useUnifiedTopology: true,
       serverSelectionTimeoutMS: 10000,  // Timeout after 10 seconds
       socketTimeoutMS: 45000,           // Close sockets after 45 seconds of inactivity
-      family: 4,                        // Use IPv4, skip trying IPv6
-      maxPoolSize: 10,                  // Maximum number of sockets
-      minPoolSize: 2                    // Minimum number of sockets
+      family: 4                         // Use IPv4, skip trying IPv6
     });
     console.log('Connected to MongoDB');
     
@@ -181,19 +185,9 @@ const connectDB = async () => {
     console.log("Checking for admin user...");
     await createDefaultAdmin();
     
-    // Start server after successful DB connection
-    const PORT = process.env.PORT || 5000;
-    server.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
   } catch (err) {
     console.error('MongoDB connection error:', err);
-    // Start server even if MongoDB connection fails
-    const PORT = process.env.PORT || 5000;
-    console.log(`Starting server on port ${PORT} without MongoDB connection`);
-    server.listen(PORT, () => {
-      console.log(`Server running on port ${PORT} without MongoDB connection`);
-    });
+    console.log("Will continue without MongoDB - using fallback data");
   }
 };
 
@@ -224,10 +218,13 @@ const createDefaultAdmin = async () => {
   }
 };
 
-// Call the connectDB function
-console.log("Calling connectDB function...");
-connectDB().catch(err => {
-  console.error("Error in connectDB:", err);
+// Connect to DB before starting server
+connectDB().finally(() => {
+  // Start server regardless of DB connection status
+  const PORT = process.env.PORT || 5000;
+  server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 });
 
 // Handle process shutdown
