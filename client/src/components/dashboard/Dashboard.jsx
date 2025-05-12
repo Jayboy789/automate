@@ -7,7 +7,7 @@ import StatsCards from './StatsCards';
 import ExecutionsList from './ExecutionsList';
 
 const Dashboard = () => {
-  const { on } = useSocket();
+  const { on, connected } = useSocket();
   const [stats, setStats] = useState({
     workflowCount: 0,
     scriptCount: 0,
@@ -18,6 +18,19 @@ const Dashboard = () => {
   const [recentExecutions, setRecentExecutions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [loadingTimeoutExceeded, setLoadingTimeoutExceeded] = useState(false);
+
+  // Set a loading timeout
+  useEffect(() => {
+    const loadingTimeout = setTimeout(() => {
+      if (isLoading) {
+        console.log("Dashboard loading timeout exceeded");
+        setLoadingTimeoutExceeded(true);
+      }
+    }, 10000); // 10 seconds timeout
+
+    return () => clearTimeout(loadingTimeout);
+  }, [isLoading]);
 
   // Load dashboard data
   useEffect(() => {
@@ -25,58 +38,62 @@ const Dashboard = () => {
       setIsLoading(true);
       setError(null);
       
+      // This flag tracks if at least one data source loaded successfully
+      let dataSuccess = false;
+      
       try {
         console.log("Dashboard: Fetching dashboard data...");
         
-        // Use Promise.allSettled to continue even if some requests fail
-        const results = await Promise.allSettled([
-          getWorkflows(),
-          getAgents(),
-          getExecutions({ limit: 5 })
-        ]);
-        
-        console.log("Dashboard: Data fetch results:", results);
-        
-        // Process workflows
-        if (results[0].status === 'fulfilled') {
-          const workflows = results[0].value;
+        // Try workflows first
+        try {
+          console.log("Fetching workflows...");
+          const workflows = await getWorkflows();
+          console.log("Workflows fetched:", workflows.length);
           setStats(prev => ({
             ...prev,
             workflowCount: workflows.length
           }));
-        } else {
-          console.error("Failed to load workflows:", results[0].reason);
+          dataSuccess = true;
+        } catch (workflowError) {
+          console.error("Failed to load workflows:", workflowError);
         }
         
-        // Process agents
-        if (results[1].status === 'fulfilled') {
-          const agentsData = results[1].value;
+        // Try agents
+        try {
+          console.log("Fetching agents...");
+          const agentsData = await getAgents();
+          console.log("Agents fetched:", agentsData.length);
           setAgents(agentsData);
           setStats(prev => ({
             ...prev,
             agentCount: agentsData.length,
             onlineAgents: agentsData.filter(agent => agent.status === 'online').length
           }));
-        } else {
-          console.error("Failed to load agents:", results[1].reason);
+          dataSuccess = true;
+        } catch (agentsError) {
+          console.error("Failed to load agents:", agentsError);
         }
         
-        // Process executions
-        if (results[2].status === 'fulfilled') {
-          const executionsData = results[2].value;
+        // Try executions
+        try {
+          console.log("Fetching executions...");
+          const executionsData = await getExecutions({ limit: 5 });
+          console.log("Executions fetched:", executionsData.length);
           setRecentExecutions(executionsData);
-        } else {
-          console.error("Failed to load executions:", results[2].reason);
+          dataSuccess = true;
+        } catch (executionsError) {
+          console.error("Failed to load executions:", executionsError);
         }
         
-        // If all requests failed, set error
-        if (results.every(result => result.status === 'rejected')) {
-          setError('Failed to load dashboard data. Check your server connection.');
+        // If none of the data sources loaded, set error
+        if (!dataSuccess) {
+          console.error("No data sources loaded successfully");
+          setError('Failed to load dashboard data. Please check your server connection.');
         }
         
       } catch (err) {
         console.error('Error loading dashboard data:', err);
-        setError('Failed to load dashboard data. Please try again.');
+        setError('Failed to load dashboard data. Please check your server connection.');
       } finally {
         setIsLoading(false);
       }
@@ -87,9 +104,8 @@ const Dashboard = () => {
 
   // Socket events for real-time updates
   useEffect(() => {
-    // Only set up listeners if socket is available
     if (!on) {
-      console.log("Dashboard: Socket not available");
+      console.log("Dashboard: Socket 'on' function not available");
       return;
     }
     
@@ -113,9 +129,10 @@ const Dashboard = () => {
         }
         
         // Update online agents count
+        const onlineCount = updatedAgents.filter(a => a.status === 'online').length;
         setStats(prevStats => ({
           ...prevStats,
-          onlineAgents: updatedAgents.filter(a => a.status === 'online').length
+          onlineAgents: onlineCount
         }));
         
         return updatedAgents;
@@ -137,21 +154,61 @@ const Dashboard = () => {
             status: data.status,
             completedAt: data.completedAt
           };
+        } else {
+          // If we receive an update for an execution not in our list,
+          // refresh the executions list
+          getExecutions({ limit: 5 })
+            .then(executions => setRecentExecutions(executions))
+            .catch(err => console.error("Error fetching executions after update:", err));
         }
         
         return updatedExecutions;
       });
     });
     
+    // Return cleanup function
     return () => {
+      console.log("Dashboard: Cleaning up socket listeners");
       if (unsubAgentStatus) unsubAgentStatus();
       if (unsubExecutionStatus) unsubExecutionStatus();
     };
   }, [on]);
 
+  // Show socket connection status in error message if needed
+  useEffect(() => {
+    if (loadingTimeoutExceeded && !connected) {
+      setError(prev => {
+        if (prev) {
+          return `${prev} Socket connection is not established.`;
+        }
+        return 'Socket connection is not established. Data updates may not be available.';
+      });
+    }
+  }, [loadingTimeoutExceeded, connected]);
+
+  // Handle retry button click
+  const handleRetry = () => {
+    window.location.reload();
+  };
+
   // Render loading state
   if (isLoading) {
-    return <div className="loading">Loading dashboard data...</div>;
+    return (
+      <div className="loading-container">
+        <div className="loading">Loading dashboard data...</div>
+        {loadingTimeoutExceeded && (
+          <div>
+            <p>Loading is taking longer than expected. You can:</p>
+            <button 
+              className="btn btn-primary"
+              onClick={handleRetry}
+            >
+              <i className="fas fa-sync"></i> Retry
+            </button>
+          </div>
+        )}
+      </div>
+    );
   }
 
   // Render error state
@@ -161,7 +218,7 @@ const Dashboard = () => {
         <div className="error-message">{error}</div>
         <button 
           className="btn btn-primary"
-          onClick={() => window.location.reload()}
+          onClick={handleRetry}
         >
           <i className="fas fa-sync"></i> Retry
         </button>
@@ -169,6 +226,7 @@ const Dashboard = () => {
     );
   }
 
+  // Render dashboard with data
   return (
     <div className="dashboard">
       <h1 className="page-title">Dashboard</h1>
@@ -183,6 +241,14 @@ const Dashboard = () => {
         </Link>
       </div>
       
+      {/* Connection Status */}
+      {!connected && (
+        <div className="alert alert-warning">
+          <i className="fas fa-exclamation-triangle"></i>
+          Socket connection is not established. Real-time updates unavailable.
+        </div>
+      )}
+      
       {/* Stats Cards */}
       <StatsCards stats={stats} />
       
@@ -192,7 +258,13 @@ const Dashboard = () => {
           <h2>Agent Status</h2>
           <Link to="/agents" className="view-all">View All</Link>
         </div>
-        <AgentStatus agents={agents} />
+        {agents.length > 0 ? (
+          <AgentStatus agents={agents} />
+        ) : (
+          <div className="empty-state">
+            <p>No agents found. <Link to="/agents">Add an agent</Link> to get started.</p>
+          </div>
+        )}
       </section>
       
       {/* Recent Executions */}
@@ -201,7 +273,13 @@ const Dashboard = () => {
           <h2>Recent Executions</h2>
           <Link to="/executions" className="view-all">View All</Link>
         </div>
-        <ExecutionsList executions={recentExecutions} />
+        {recentExecutions.length > 0 ? (
+          <ExecutionsList executions={recentExecutions} />
+        ) : (
+          <div className="empty-state">
+            <p>No executions found. Run a workflow to see results here.</p>
+          </div>
+        )}
       </section>
     </div>
   );

@@ -7,27 +7,36 @@ const User = require('../models/index');
  */
 const socketAuth = async (socket, next) => {
   try {
+    console.log('Socket auth middleware running for socket:', socket.id);
     const token = socket.handshake.auth.token;
     
     if (!token) {
-      return next(new Error('Authentication required'));
+      console.log('Socket auth failed: No token provided');
+      return next(new Error('Authentication required - no token provided'));
     }
     
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
-    // Find user
-    const user = await User.findById(decoded.userId).select('-password');
-    if (!user) {
-      return next(new Error('User not found'));
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      
+      // Find user
+      const user = await User.findById(decoded.userId).select('-password');
+      if (!user) {
+        console.log('Socket auth failed: User not found');
+        return next(new Error('Authentication failed - user not found'));
+      }
+      
+      // Attach user to socket
+      console.log(`Socket ${socket.id} authenticated for user: ${user.name}`);
+      socket.user = user;
+      next();
+    } catch (jwtError) {
+      console.error('JWT verification error:', jwtError.message);
+      return next(new Error('Invalid or expired token'));
     }
-    
-    // Attach user to socket
-    socket.user = user;
-    next();
   } catch (error) {
     console.error('Socket authentication error:', error);
-    next(new Error('Invalid or expired token'));
+    next(new Error('Internal server error during authentication'));
   }
 };
 

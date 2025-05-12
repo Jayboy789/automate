@@ -29,6 +29,7 @@ console.log("Middleware applied");
 
 // Import the authentication middleware
 const { authenticateToken } = require('./middleware/auth');
+const { socketAuth } = require('./middleware/socketAuth');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -53,27 +54,105 @@ app.get('/', (req, res) => {
   res.send('AutoMate API is running');
 });
 
+// Development mode fallback data if MongoDB isn't available
+const developmentFallbackData = {
+  users: [
+    { _id: 'dev-user-id', name: 'Development User', email: 'dev@example.com', role: 'admin' }
+  ],
+  workflows: [],
+  scripts: [],
+  agents: [],
+  executions: [],
+  clients: []
+};
+
+// Add these fallback routes if in development mode
+if (process.env.NODE_ENV === 'development') {
+  app.use((req, res, next) => {
+    if (mongoose.connection.readyState !== 1) {
+      // MongoDB not connected, use fallback data
+      if (req.path === '/api/workflows') {
+        return res.json(developmentFallbackData.workflows);
+      } else if (req.path === '/api/agents') {
+        return res.json(developmentFallbackData.agents);
+      } else if (req.path === '/api/executions') {
+        return res.json(developmentFallbackData.executions);
+      } else if (req.path === '/api/clients') {
+        return res.json(developmentFallbackData.clients);
+      } else if (req.path === '/api/scripts') {
+        return res.json(developmentFallbackData.scripts);
+      }
+    }
+    next();
+  });
+}
+
 // Set up Socket.io
 try {
   const io = new Server(server, {
     cors: {
       origin: process.env.CLIENT_URL || 'http://localhost:3000',
-      methods: ['GET', 'POST'],
+      methods: ['GET', 'POST', 'PUT', 'DELETE'],
       credentials: true
-    }
+    },
+    pingTimeout: 60000,            // Increase ping timeout to 60 seconds
+    connectTimeout: 45000,         // Increase connection timeout to 45 seconds
+    transports: ['websocket', 'polling'],  // Use WebSocket with polling fallback
+    allowUpgrades: true,           // Allow transport upgrades
+    perMessageDeflate: true,       // Enable per-message deflate
+    httpCompression: true,         // Enable HTTP compression
+    wsEngine: 'ws'                 // Use the 'ws' WebSocket engine
   });
   console.log("Socket.io server created");
 
   // Make io available in routes
   app.set('io', io);
 
+  // Apply authentication middleware to Socket.IO
+  io.use((socket, next) => {
+    console.log(`New socket connection attempt: ${socket.id}`);
+    next();
+  });
+  
+  // Only apply auth middleware if not in development
+  if (process.env.NODE_ENV !== 'development') {
+    io.use(socketAuth);
+  } else {
+    console.log("Development mode: Socket.IO authentication disabled");
+  }
+
   // Socket.io connection handling
   io.on('connection', (socket) => {
     console.log(`Socket connected: ${socket.id}`);
     
+    // Add user-specific room for targeted messages
+    if (socket.user) {
+      socket.join(`user:${socket.user._id}`);
+      console.log(`User ${socket.user.name} joined room: user:${socket.user._id}`);
+    }
+    
+    // Handle agent connection
+    socket.on('agent:connect', (agentId) => {
+      if (agentId) {
+        socket.join(`agent:${agentId}`);
+        console.log(`Agent ${agentId} joined room: agent:${agentId}`);
+      }
+    });
+    
+    // Handle job result
+    socket.on('job:result', async (data) => {
+      console.log(`Received job result for ${data.jobId}:`, data.success ? 'SUCCESS' : 'FAILURE');
+      // Job result handling will be done in the job handler
+    });
+    
     // Handle disconnection
-    socket.on('disconnect', () => {
-      console.log(`Socket disconnected: ${socket.id}`);
+    socket.on('disconnect', (reason) => {
+      console.log(`Socket disconnected: ${socket.id}. Reason: ${reason}`);
+    });
+    
+    // Set up other socket event handlers
+    socket.on('error', (error) => {
+      console.error(`Socket ${socket.id} error:`, error);
     });
   });
 } catch (error) {
@@ -90,6 +169,11 @@ const connectDB = async () => {
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/automate', {
       useNewUrlParser: true,
       useUnifiedTopology: true,
+      serverSelectionTimeoutMS: 10000,  // Timeout after 10 seconds
+      socketTimeoutMS: 45000,           // Close sockets after 45 seconds of inactivity
+      family: 4,                        // Use IPv4, skip trying IPv6
+      maxPoolSize: 10,                  // Maximum number of sockets
+      minPoolSize: 2                    // Minimum number of sockets
     });
     console.log('Connected to MongoDB');
     
@@ -104,17 +188,12 @@ const connectDB = async () => {
     });
   } catch (err) {
     console.error('MongoDB connection error:', err);
-    // Don't exit the process in development mode to allow for reconnection
-    if (process.env.NODE_ENV === 'production') {
-      process.exit(1);
-    } else {
-      // In development, start the server anyway
-      console.log("Starting server without MongoDB in development mode");
-      const PORT = process.env.PORT || 5000;
-      server.listen(PORT, () => {
-        console.log(`Server running on port ${PORT} without MongoDB connection`);
-      });
-    }
+    // Start server even if MongoDB connection fails
+    const PORT = process.env.PORT || 5000;
+    console.log(`Starting server on port ${PORT} without MongoDB connection`);
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT} without MongoDB connection`);
+    });
   }
 };
 
@@ -145,14 +224,11 @@ const createDefaultAdmin = async () => {
   }
 };
 
-// IMPORTANT: Call the connectDB function
+// Call the connectDB function
 console.log("Calling connectDB function...");
 connectDB().catch(err => {
   console.error("Error in connectDB:", err);
 });
-
-// Display startup message
-console.log("Server initialization complete - waiting for MongoDB connection or fallback startup");
 
 // Handle process shutdown
 process.on('SIGINT', () => {
