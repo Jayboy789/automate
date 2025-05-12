@@ -24,19 +24,21 @@ const ExecutionsList = ({ executions }) => {
   };
 
   // If no executions, display message
-  if (executions.length === 0) {
+  if (!executions || executions.length === 0) {
     return (
       <div className="empty-state">
-        <p>No workflow executions yet.</p>
+        <i className="fa fa-history empty-icon"></i>
+        <h2>No Executions Yet</h2>
+        <p>Run a workflow to see the execution history here.</p>
         <Link to="/workflows" className="btn btn-primary">
-          Execute a Workflow
+          Go to Workflows
         </Link>
       </div>
     );
   }
 
   return (
-    <div className="executions-list">
+    <div className="executions-list" style={{ padding: '0 20px 20px' }}>
       <table className="data-table">
         <thead>
           <tr>
@@ -51,13 +53,13 @@ const ExecutionsList = ({ executions }) => {
           {executions.map((execution) => (
             <tr key={execution._id}>
               <td>
-                <div className="workflow-info">
-                  <span className="workflow-name">
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontWeight: '500' }}>
                     {execution.workflowName || 'Unknown Workflow'}
                   </span>
                   {execution.clientName && (
-                    <span className="client-name">
-                      {execution.clientName}
+                    <span style={{ fontSize: '12px', color: '#6b7280' }}>
+                      Client: {execution.clientName}
                     </span>
                   )}
                 </div>
@@ -65,8 +67,8 @@ const ExecutionsList = ({ executions }) => {
               <td>{formatTime(execution.startedAt)}</td>
               <td>{formatDuration(execution.duration)}</td>
               <td>
-                <span className={`status-badge status-${execution.status.toLowerCase()}`}>
-                  {execution.status}
+                <span className={`status-badge status-${execution.status?.toLowerCase() || 'pending'}`}>
+                  {execution.status || 'Pending'}
                 </span>
               </td>
               <td>

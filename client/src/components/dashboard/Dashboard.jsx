@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getWorkflows, getAgents, getExecutions } from '../../services/api';
+import { getWorkflows, getAgents, getExecutions, getScripts } from '../../services/api';
 import { useSocket } from '../../contexts/SocketContext';
 import AgentStatus from './AgentStatus';
 import StatsCards from './StatsCards';
 import ExecutionsList from './ExecutionsList';
+import '../../styles/dashboard.css';
 
 const Dashboard = () => {
   const { on, connected, reconnect } = useSocket();
@@ -18,17 +19,6 @@ const Dashboard = () => {
   const [recentExecutions, setRecentExecutions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [apiResponses, setApiResponses] = useState({
-    workflows: false,
-    agents: false,
-    executions: false
-  });
-
-  // Socket diagnostics
-  useEffect(() => {
-    console.log("Socket connection status:", connected ? "Connected" : "Disconnected");
-    console.log("Server URL:", process.env.REACT_APP_API_URL || 'http://localhost:5000');
-  }, [connected]);
 
   // Load dashboard data
   useEffect(() => {
@@ -36,67 +26,37 @@ const Dashboard = () => {
       setIsLoading(true);
       setError(null);
       
-      // Track successful API calls
-      const responses = {
-        workflows: false,
-        agents: false,
-        executions: false
-      };
+      console.log("Dashboard: Loading data...");
       
       try {
-        console.log("Dashboard: Fetching dashboard data...");
+        // Load data in parallel for better performance
+        const [workflows, agentsData, executionsData, scripts] = await Promise.all([
+          getWorkflows(),
+          getAgents(),
+          getExecutions({ limit: 5 }),
+          getScripts()
+        ]);
         
-        // Attempt to fetch workflows
-        try {
-          console.log("Fetching workflows...");
-          const workflows = await getWorkflows();
-          console.log("Workflows fetched:", workflows?.length || 0);
-          setStats(prev => ({
-            ...prev,
-            workflowCount: workflows?.length || 0
-          }));
-          responses.workflows = true;
-        } catch (workflowError) {
-          console.error("Failed to load workflows:", workflowError);
-        }
+        console.log("Data loaded:", {
+          workflows: workflows?.length || 0,
+          agents: agentsData?.length || 0,
+          executions: executionsData?.length || 0,
+          scripts: scripts?.length || 0
+        });
         
-        // Attempt to fetch agents
-        try {
-          console.log("Fetching agents...");
-          const agentsData = await getAgents();
-          console.log("Agents fetched:", agentsData?.length || 0);
-          setAgents(agentsData || []);
-          setStats(prev => ({
-            ...prev,
-            agentCount: agentsData?.length || 0,
-            onlineAgents: agentsData?.filter(agent => agent.status === 'online')?.length || 0
-          }));
-          responses.agents = true;
-        } catch (agentsError) {
-          console.error("Failed to load agents:", agentsError);
-        }
+        // Set state with fetched data
+        setStats({
+          workflowCount: workflows?.length || 0,
+          scriptCount: scripts?.length || 0,
+          agentCount: agentsData?.length || 0,
+          onlineAgents: agentsData?.filter(agent => agent.status === 'online').length || 0
+        });
         
-        // Attempt to fetch executions
-        try {
-          console.log("Fetching executions...");
-          const executionsData = await getExecutions({ limit: 5 });
-          console.log("Executions fetched:", executionsData?.length || 0);
-          setRecentExecutions(executionsData || []);
-          responses.executions = true;
-        } catch (executionsError) {
-          console.error("Failed to load executions:", executionsError);
-        }
-        
-        // Update API response tracking
-        setApiResponses(responses);
-        
-        // Check if any API calls failed
-        if (!responses.workflows && !responses.agents && !responses.executions) {
-          setError('Could not load any dashboard data. Check server connection.');
-        }
+        setAgents(agentsData || []);
+        setRecentExecutions(executionsData || []);
       } catch (err) {
         console.error('Error loading dashboard data:', err);
-        setError('Failed to load dashboard data. Please check your server connection.');
+        setError('Could not load all dashboard data. Check server connection.');
       } finally {
         setIsLoading(false);
       }
@@ -107,16 +67,10 @@ const Dashboard = () => {
 
   // Socket events for real-time updates
   useEffect(() => {
-    if (!on) {
-      console.log("Dashboard: Socket 'on' function not available");
-      return () => {};
-    }
-    
-    console.log("Dashboard: Setting up socket listeners");
+    if (!on) return;
     
     // Agent status updates
     const unsubAgentStatus = on('agent:status', data => {
-      console.log("Dashboard: Agent status update", data);
       if (!data) return;
       
       setAgents(prevAgents => {
@@ -144,7 +98,6 @@ const Dashboard = () => {
     
     // Execution status updates
     const unsubExecutionStatus = on('execution:status', data => {
-      console.log("Dashboard: Execution status update", data);
       if (!data) return;
       
       setRecentExecutions(prevExecutions => {
@@ -163,65 +116,79 @@ const Dashboard = () => {
       });
     });
     
-    // Return cleanup function
     return () => {
-      console.log("Dashboard: Cleaning up socket listeners");
-      unsubAgentStatus && unsubAgentStatus();
-      unsubExecutionStatus && unsubExecutionStatus();
+      if (unsubAgentStatus) unsubAgentStatus();
+      if (unsubExecutionStatus) unsubExecutionStatus();
     };
   }, [on]);
 
-  // Handle retry button click
-  const handleRetry = () => {
+  // Handle page refresh
+  const handleRefresh = () => {
     window.location.reload();
   };
-
-  // Force socket reconnection
+  
+  // Handle socket reconnect
   const handleReconnectSocket = () => {
-    if (reconnect) {
-      reconnect();
-    } else {
-      window.location.reload();
-    }
+    reconnect();
   };
 
   // Render loading state
   if (isLoading) {
     return (
-      <div className="loading-container">
-        <div className="loading">Loading dashboard data...</div>
-      </div>
-    );
-  }
-
-  // Render error state - only if we couldn't get any data
-  if (error && !apiResponses.workflows && !apiResponses.agents && !apiResponses.executions) {
-    return (
-      <div className="error-container">
-        <div className="error-message">{error}</div>
-        <div className="error-actions">
-          <button 
-            className="btn btn-primary"
-            onClick={handleRetry}
-            style={{ marginRight: '10px' }}
-          >
-            <i className="fa fa-sync"></i> Refresh Page
-          </button>
-          <button 
-            className="btn btn-secondary"
-            onClick={handleReconnectSocket}
-          >
-            <i className="fa fa-plug"></i> Reconnect Socket
-          </button>
+      <div className="dashboard">
+        <div className="loading">
+          <i className="fa fa-spinner fa-spin" style={{ marginRight: '10px' }}></i>
+          Loading dashboard data...
         </div>
       </div>
     );
   }
 
-  // Render dashboard with data
+  // Render error state
+  if (error) {
+    return (
+      <div className="dashboard">
+        <div className="error-container">
+          <div className="error-message">
+            <i className="fa fa-exclamation-triangle" style={{ marginRight: '10px' }}></i>
+            {error}
+          </div>
+          <div className="error-actions">
+            <button 
+              className="btn btn-primary"
+              onClick={handleRefresh}
+            >
+              <i className="fa fa-refresh"></i> Refresh Page
+            </button>
+            <button 
+              className="btn btn-secondary"
+              onClick={handleReconnectSocket}
+            >
+              <i className="fa fa-plug"></i> Reconnect Socket
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard">
       <h1 className="page-title">Dashboard</h1>
+      
+      {/* Connection Status */}
+      {!connected && (
+        <div className="alert alert-warning">
+          <i className="fa fa-exclamation-triangle"></i>
+          Socket connection is not established. Real-time updates unavailable.
+          <button 
+            className="btn btn-sm btn-secondary ml-2"
+            onClick={handleReconnectSocket}
+          >
+            Reconnect
+          </button>
+        </div>
+      )}
       
       {/* Quick Actions */}
       <div className="quick-actions">
@@ -231,22 +198,10 @@ const Dashboard = () => {
         <Link to="/scripts/new" className="btn btn-secondary">
           <i className="fa fa-code"></i> New Script
         </Link>
+        <Link to="/agents" className="btn btn-secondary">
+          <i className="fa fa-robot"></i> Manage Agents
+        </Link>
       </div>
-      
-      {/* Connection Status */}
-      {!connected && (
-        <div className="alert alert-warning">
-          <i className="fa fa-exclamation-triangle"></i>
-          Socket connection is not established. Real-time updates unavailable.
-          <button 
-            className="btn btn-sm btn-outline-secondary ml-2"
-            onClick={handleReconnectSocket}
-            style={{ marginLeft: '10px' }}
-          >
-            <i className="fa fa-sync"></i> Reconnect
-          </button>
-        </div>
-      )}
       
       {/* Stats Cards */}
       <StatsCards stats={stats} />
@@ -254,8 +209,8 @@ const Dashboard = () => {
       {/* Agents Status */}
       <section className="dashboard-section">
         <div className="section-header">
-          <h2>Agent Status</h2>
-          <Link to="/agents" className="view-all">View All</Link>
+          <h2><i className="fa fa-robot"></i> Agent Status</h2>
+          <Link to="/agents" className="view-all">View All <i className="fa fa-arrow-right"></i></Link>
         </div>
         <AgentStatus agents={agents} />
       </section>
@@ -263,8 +218,8 @@ const Dashboard = () => {
       {/* Recent Executions */}
       <section className="dashboard-section">
         <div className="section-header">
-          <h2>Recent Executions</h2>
-          <Link to="/executions" className="view-all">View All</Link>
+          <h2><i className="fa fa-history"></i> Recent Executions</h2>
+          <Link to="/executions" className="view-all">View All <i className="fa fa-arrow-right"></i></Link>
         </div>
         <ExecutionsList executions={recentExecutions} />
       </section>

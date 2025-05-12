@@ -34,6 +34,16 @@ const StatsCards = ({ stats }) => {
           <div className="stat-label">Online Agents</div>
         </div>
       </div>
+      
+      <div className="stat-card">
+        <div className="stat-icon" style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>
+          <i className="fa fa-history"></i>
+        </div>
+        <div className="stat-content">
+          <div className="stat-value">0</div>
+          <div className="stat-label">Executions Today</div>
+        </div>
+      </div>
     </div>
   );
 };
