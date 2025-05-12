@@ -1,6 +1,6 @@
 // middleware/socketAuth.js
 const jwt = require('jsonwebtoken');
-const User = require('../models/index');
+const User = require('../models/User'); // Direct import
 
 /**
  * Socket.io authentication middleware
@@ -17,7 +17,10 @@ const socketAuth = async (socket, next) => {
     
     // Verify token
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(
+        token, 
+        process.env.JWT_SECRET || 'your_jwt_secret_key_change_this_in_production'
+      );
       
       // Find user
       const user = await User.findById(decoded.userId).select('-password');

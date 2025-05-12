@@ -1,6 +1,6 @@
 // middleware/auth.js
 const jwt = require('jsonwebtoken');
-const User = require('../models/index');
+const User = require('../models/User'); // Direct import of User model
 
 /**
  * Middleware to authenticate JWT token
@@ -15,7 +15,10 @@ const authenticateToken = async (req, res, next) => {
     }
     
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(
+      token, 
+      process.env.JWT_SECRET || 'your_jwt_secret_key_change_this_in_production'
+    );
     
     // Find user
     const user = await User.findById(decoded.userId).select('-password');

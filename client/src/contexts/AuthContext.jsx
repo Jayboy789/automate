@@ -14,7 +14,7 @@ export const AuthProvider = ({ children }) => {
 
   // DEVELOPMENT MODE - Skip real authentication
   // Switch between development mode and real auth by changing this flag
-  const DEV_MODE = true;
+  const DEV_MODE = false;
 
   useEffect(() => {
     if (DEV_MODE) {
