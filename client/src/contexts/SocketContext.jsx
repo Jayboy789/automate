@@ -2,9 +2,6 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 
-// Enable debugging for socket.io for development only
-localStorage.debug = 'socket.io-client:*';
-
 // Create context
 const SocketContext = createContext(null);
 
@@ -14,106 +11,55 @@ export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
-  const [reconnectTimeout, setReconnectTimeout] = useState(null);
 
   // Initialize socket connection when authenticated
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    // Always connect in development mode for easier testing
-    const DEV_MODE = process.env.NODE_ENV === 'development';
+    console.log('SocketProvider initializing, auth status:', isAuthenticated);
     
-    if (isAuthenticated || DEV_MODE) {
-      const token = localStorage.getItem('token');
-      const serverUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-      
-      console.log('Attempting to connect socket to:', serverUrl, 'DEV_MODE:', DEV_MODE);
-      
-      // Clear any existing reconnect timeout
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-      
-      try {
-        // Create socket connection with improved transport settings
-        const socketInstance = io(serverUrl, {
-          auth: token ? { token } : {},
-          reconnection: true,
-          reconnectionDelay: 1000,
-          reconnectionDelayMax: 10000,
-          reconnectionAttempts: 10,
-          timeout: 10000,
-          transports: ['websocket', 'polling']
-        });
-        
-        // Socket event handlers
-        socketInstance.on('connect', () => {
-          console.log('Socket connected successfully with ID:', socketInstance.id);
-          setConnected(true);
-          setConnectionAttempts(0); // Reset attempts on successful connection
-        });
-        
-        socketInstance.on('disconnect', (reason) => {
-          console.log('Socket disconnected. Reason:', reason);
-          setConnected(false);
-        });
-        
-        socketInstance.on('connect_error', (error) => {
-          console.error('Socket connection error:', error.message);
-          setConnectionAttempts(prev => prev + 1);
-        });
-        
-        socketInstance.on('error', (error) => {
-          console.error('Socket error:', error);
-        });
-        
-        // Set socket instance
-        setSocket(socketInstance);
-        
-        // Cleanup on unmount
-        return () => {
-          console.log('Cleaning up socket connection');
-          if (reconnectTimeout) {
-            clearTimeout(reconnectTimeout);
-          }
-          socketInstance.disconnect();
-        };
-      } catch (error) {
-        console.error('Error creating socket instance:', error);
-      }
-    } else {
-      // Disconnect socket when not authenticated
-      if (socket) {
-        console.log('User not authenticated, disconnecting socket');
-        socket.disconnect();
-        setSocket(null);
-        setConnected(false);
-      }
-    }
+    // Hardcoded server URL for development
+    const serverUrl = 'http://localhost:5000';
+    console.log('Connecting to socket server at:', serverUrl);
+    
+    // Create socket with simplified configuration
+    const socketInstance = io(serverUrl, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: Infinity,
+      timeout: 10000,
+      auth: { token: 'dev-token' }  // Development token
+    });
+    
+    // Socket event handlers
+    socketInstance.on('connect', () => {
+      console.log('Socket connected with ID:', socketInstance.id);
+      setConnected(true);
+      setConnectionAttempts(0);
+    });
+    
+    socketInstance.on('disconnect', (reason) => {
+      console.log('Socket disconnected. Reason:', reason);
+      setConnected(false);
+    });
+    
+    socketInstance.on('connect_error', (error) => {
+      console.error('Socket connection error:', error.message);
+      setConnectionAttempts(prev => prev + 1);
+    });
+    
+    socketInstance.on('error', (error) => {
+      console.error('Socket error:', error);
+    });
+    
+    // Set socket instance
+    setSocket(socketInstance);
+    
+    // Cleanup on unmount
+    return () => {
+      console.log('Cleaning up socket connection');
+      socketInstance.disconnect();
+    };
   }, [isAuthenticated]);
-
-  // Force reconnection if connections keep failing
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (connectionAttempts > 0 && !connected && !reconnectTimeout) {
-      const timeout = Math.min(1000 * Math.pow(2, connectionAttempts - 1), 30000);
-      console.log(`Will attempt reconnection in ${timeout/1000} seconds (attempt ${connectionAttempts})`);
-      
-      const timeoutId = setTimeout(() => {
-        if (!connected) {
-          console.log(`Attempting forced reconnection (attempt ${connectionAttempts})`);
-          // Recreate the socket by triggering the first useEffect
-          setSocket(null);
-        }
-      }, timeout);
-      
-      setReconnectTimeout(timeoutId);
-      
-      return () => {
-        clearTimeout(timeoutId);
-        setReconnectTimeout(null);
-      };
-    }
-  }, [connectionAttempts, connected]);
 
   // Context value
   const value = {
@@ -123,6 +69,7 @@ export const SocketProvider = ({ children }) => {
     emit: (event, data, callback) => {
       if (socket && connected) {
         socket.emit(event, data, callback);
+        console.log('Socket event emitted:', event, data);
       } else {
         console.warn('Cannot emit event, socket not connected:', event);
       }
@@ -139,14 +86,16 @@ export const SocketProvider = ({ children }) => {
           socket.off(event, callback);
         };
       }
-      
-      return () => {};
+      console.warn('Cannot subscribe, socket not initialized');
+      return () => {}; // Return empty function if no socket
     },
     // Force reconnection
     reconnect: () => {
       if (socket) {
         console.log('Forcing socket reconnection');
         socket.disconnect().connect();
+      } else {
+        console.warn('Cannot reconnect, socket not initialized');
       }
     }
   };
