@@ -15,6 +15,8 @@
   "author": "AutoMate Team",
   "license": "MIT",
   "dependencies": {
+    "axios": "^1.9.0",
+    "dotenv": "^16.5.0",
     "electron-log": "^4.4.8",
     "electron-store": "^8.2.0",
     "node-powershell": "^5.0.1",

@@ -1,4 +1,4 @@
-// handlers/workflowEngine.js
+// server/handlers/workflowEngine.js
 const { Workflow, Execution, Job, Script } = require('../models/index');
 const { v4: uuidv4 } = require('uuid');
 
@@ -12,9 +12,10 @@ const workflowEngine = {
    * @param {string} workflowId - ID of the workflow to execute
    * @param {string} userId - ID of the user starting the execution
    * @param {string} agentId - Optional specific agent to use
+   * @param {object} initialVariables - Optional initial variables
    * @returns {Promise<Execution>} - Created execution
    */
-  async startExecution(workflowId, userId, agentId = null) {
+  async startExecution(workflowId, userId, agentId = null, initialVariables = {}) {
     // Load the workflow
     const workflow = await Workflow.findById(workflowId);
     if (!workflow) {
@@ -27,9 +28,26 @@ const workflowEngine = {
       agentId: agentId,
       status: 'pending',
       initiatedBy: userId,
-      startedAt: new Date()
+      startedAt: new Date(),
+      results: {
+        variables: {
+          system: {
+            startTime: new Date().toISOString(),
+            workflowId: workflow._id.toString(),
+            executionId: null, // Will be updated after save
+            userId: userId.toString(),
+            environment: process.env.NODE_ENV || 'development'
+          },
+          workflow: workflow.variables || {}, // Workflow default variables
+          user: initialVariables || {} // User-provided variables
+        }
+      }
     });
     
+    await execution.save();
+    
+    // Update executionId in variables now that we have it
+    execution.results.variables.system.executionId = execution._id.toString();
     await execution.save();
     
     // Update workflow last executed timestamp
@@ -157,20 +175,28 @@ const workflowEngine = {
       
       // Process node based on type
       switch (node.type) {
-        case 'script':
+        case 'scriptNode':
           await this.executeScriptNode(node, workflow, execution);
           break;
         
-        case 'condition':
+        case 'conditionNode':
           await this.executeConditionNode(node, workflow, execution);
           break;
         
-        case 'wait':
+        case 'waitNode':
           await this.executeWaitNode(node, workflow, execution);
           break;
         
-        case 'variable':
+        case 'variableNode':
           await this.executeVariableNode(node, workflow, execution);
+          break;
+        
+        case 'stringNode':
+          await this.executeStringNode(node, workflow, execution);
+          break;
+        
+        case 'foreachNode':
+          await this.executeForeachNode(node, workflow, execution);
           break;
         
         default:
@@ -328,6 +354,297 @@ const workflowEngine = {
   },
   
   /**
+   * Execute a string operation node
+   * @param {object} node - String node
+   * @param {Workflow} workflow - Parent workflow
+   * @param {Execution} execution - Current execution
+   */
+  async executeStringNode(node, workflow, execution) {
+    const { operation, input1, input2, outputVariable } = node.data;
+    
+    if (!operation || !input1 || !outputVariable) {
+      throw new Error('String node missing required configuration');
+    }
+    
+    // Get input values (could be variable references or literal strings)
+    const input1Value = await this.getVariableOrLiteral(input1, execution);
+    const input2Value = input2 ? await this.getVariableOrLiteral(input2, execution) : null;
+    
+    let result;
+    
+    // Perform the selected string operation
+    switch (operation) {
+      case 'concat':
+        if (input2Value === null) {
+          throw new Error('Second string required for concatenation');
+        }
+        result = String(input1Value) + String(input2Value);
+        break;
+        
+      case 'substring':
+        const startIndex = node.data.startIndex || 0;
+        const endIndex = node.data.endIndex !== undefined ? node.data.endIndex : undefined;
+        
+        if (typeof input1Value !== 'string') {
+          throw new Error('Input must be a string for substring operation');
+        }
+        
+        result = endIndex !== undefined 
+          ? input1Value.substring(startIndex, endIndex) 
+          : input1Value.substring(startIndex);
+        break;
+        
+      case 'replace':
+        if (input2Value === null) {
+          throw new Error('Replace pattern required for replace operation');
+        }
+        
+        const replacementText = node.data.replacementText 
+          ? await this.getVariableOrLiteral(node.data.replacementText, execution) 
+          : '';
+          
+        if (typeof input1Value !== 'string') {
+          throw new Error('Input must be a string for replace operation');
+        }
+        
+        result = input1Value.replace(new RegExp(input2Value, 'g'), replacementText);
+        break;
+        
+      case 'toLower':
+        if (typeof input1Value !== 'string') {
+          throw new Error('Input must be a string for toLower operation');
+        }
+        result = input1Value.toLowerCase();
+        break;
+        
+      case 'toUpper':
+        if (typeof input1Value !== 'string') {
+          throw new Error('Input must be a string for toUpper operation');
+        }
+        result = input1Value.toUpperCase();
+        break;
+        
+      case 'trim':
+        if (typeof input1Value !== 'string') {
+          throw new Error('Input must be a string for trim operation');
+        }
+        result = input1Value.trim();
+        break;
+        
+      case 'split':
+        if (typeof input1Value !== 'string') {
+          throw new Error('Input must be a string for split operation');
+        }
+        
+        const delimiter = input2Value !== null ? input2Value : '';
+        result = input1Value.split(delimiter);
+        break;
+        
+      case 'length':
+        if (typeof input1Value !== 'string') {
+          throw new Error('Input must be a string for length operation');
+        }
+        result = input1Value.length;
+        break;
+        
+      default:
+        throw new Error(`Unsupported string operation: ${operation}`);
+    }
+    
+    // Store the result in a variable
+    this.setVariable(outputVariable, result, execution);
+    
+    // Log the operation
+    execution.logs.push({
+      nodeId: node.id,
+      timestamp: new Date(),
+      message: `String operation '${operation}' completed: result stored in ${outputVariable}`,
+      type: 'info'
+    });
+    
+    // Mark this node as completed
+    await this.markNodeComplete(node, execution);
+    
+    // Continue workflow execution
+    await this.continueExecution(execution);
+  },
+  
+  /**
+   * Execute a foreach node
+   * @param {object} node - Foreach node
+   * @param {Workflow} workflow - Parent workflow
+   * @param {Execution} execution - Current execution
+   */
+  async executeForeachNode(node, workflow, execution) {
+    const { collectionVariable, itemVariable, indexVariable } = node.data;
+    
+    if (!collectionVariable || !itemVariable) {
+      throw new Error('ForEach node missing required configuration');
+    }
+    
+    // Get the collection to iterate over
+    const collection = await this.getVariableValue(collectionVariable, execution);
+    
+    if (!collection || (typeof collection !== 'object' && !Array.isArray(collection))) {
+      throw new Error(`Collection variable ${collectionVariable} is not iterable`);
+    }
+    
+    // Convert the collection to an array
+    const items = Array.isArray(collection) ? collection : Object.entries(collection);
+    
+    // Create a job for this node
+    const job = new Job({
+      agentId: execution.agentId,
+      nodeId: node.id,
+      script: `ForEach loop over ${collectionVariable} (${items.length} items)`,
+      userId: execution.initiatedBy,
+      executionId: execution._id,
+      status: 'running',
+      startedAt: new Date()
+    });
+    
+    await job.save();
+    
+    // Find the forEach body node
+    const bodyEdge = workflow.edges.find(e => 
+      e.source === node.id && e.sourceHandle === 'forEach'
+    );
+    
+    if (!bodyEdge) {
+      throw new Error('ForEach node has no body connection');
+    }
+    
+    const bodyNode = workflow.nodes.find(n => n.id === bodyEdge.target);
+    if (!bodyNode) {
+      throw new Error('ForEach body node not found');
+    }
+    
+    // Process items
+    let currentIndex = 0;
+    let hasError = false;
+    
+    // Determine if we should use parallel execution
+    const parallelExecution = node.data.parallelExecution === true;
+    
+    if (parallelExecution) {
+      // For parallel execution, we create an array of promises
+      const promises = items.map(async (item, index) => {
+        try {
+          // Set the current item and index variables
+          this.setVariable(itemVariable, Array.isArray(collection) ? item : item[1], execution);
+          
+          if (indexVariable) {
+            this.setVariable(indexVariable, index, execution);
+          }
+          
+          // Update execution with current iteration
+          execution.logs.push({
+            nodeId: node.id,
+            timestamp: new Date(),
+            message: `ForEach iteration ${index + 1}/${items.length}`,
+            type: 'info'
+          });
+          
+          // Execute the body node
+          await this.executeNode(bodyNode, workflow, execution);
+          
+          return { index, success: true };
+        } catch (error) {
+          hasError = true;
+          
+          // Log the error
+          execution.logs.push({
+            nodeId: node.id,
+            timestamp: new Date(),
+            message: `Error in ForEach iteration ${index + 1}: ${error.message}`,
+            type: 'error'
+          });
+          
+          return { index, success: false, error };
+        }
+      });
+      
+      // Wait for all iterations to complete
+      await Promise.all(promises);
+    } else {
+      // For sequential execution, process one at a time
+      for (let i = 0; i < items.length; i++) {
+        currentIndex = i;
+        
+        try {
+          // Set the current item and index variables
+          this.setVariable(itemVariable, Array.isArray(collection) ? items[i] : items[i][1], execution);
+          
+          if (indexVariable) {
+            this.setVariable(indexVariable, i, execution);
+          }
+          
+          // Update execution with current iteration
+          execution.logs.push({
+            nodeId: node.id,
+            timestamp: new Date(),
+            message: `ForEach iteration ${i + 1}/${items.length}`,
+            type: 'info'
+          });
+          
+          // Execute the body node
+          await this.executeNode(bodyNode, workflow, execution);
+        } catch (error) {
+          hasError = true;
+          
+          // Log the error
+          execution.logs.push({
+            nodeId: node.id,
+            timestamp: new Date(),
+            message: `Error in ForEach iteration ${i + 1}: ${error.message}`,
+            type: 'error'
+          });
+          
+          // If we shouldn't continue on error, break the loop
+          if (!node.data.continueOnError) {
+            break;
+          }
+        }
+      }
+    }
+    
+    // Update the job status
+    job.status = 'completed';
+    job.completedAt = new Date();
+    await job.save();
+    
+    // Determine which outgoing path to take
+    if (hasError && !node.data.continueOnError) {
+      // Find error edge
+      const errorEdge = workflow.edges.find(e => 
+        e.source === node.id && e.sourceHandle === 'error'
+      );
+      
+      if (errorEdge) {
+        const errorNode = workflow.nodes.find(n => n.id === errorEdge.target);
+        if (errorNode) {
+          await this.executeNode(errorNode, workflow, execution);
+        }
+      }
+    } else {
+      // Find complete edge
+      const completeEdge = workflow.edges.find(e => 
+        e.source === node.id && e.sourceHandle === 'complete'
+      );
+      
+      if (completeEdge) {
+        const completeNode = workflow.nodes.find(n => n.id === completeEdge.target);
+        if (completeNode) {
+          await this.executeNode(completeNode, workflow, execution);
+        }
+      }
+    }
+    
+    // Continue workflow execution
+    await this.continueExecution(execution);
+  },
+  
+  /**
    * Execute a wait node
    * @param {object} node - Wait node
    * @param {Workflow} workflow - Parent workflow
@@ -384,13 +701,31 @@ const workflowEngine = {
     // Replace variables in the value if it's a string
     if (typeof variableValue === 'string') {
       variableValue = await this.replaceVariables(variableValue, execution);
+      
+      // Try to parse the value as JSON if it looks like a JSON object or array
+      if ((variableValue.startsWith('{') && variableValue.endsWith('}')) || 
+          (variableValue.startsWith('[') && variableValue.endsWith(']'))) {
+        try {
+          variableValue = JSON.parse(variableValue);
+        } catch (e) {
+          // If parsing fails, keep as string
+        }
+      }
+      // Try to parse as number
+      else if (!isNaN(variableValue)) {
+        variableValue = Number(variableValue);
+      }
+      // Convert to boolean if it's "true" or "false"
+      else if (variableValue === 'true') {
+        variableValue = true;
+      } 
+      else if (variableValue === 'false') {
+        variableValue = false;
+      }
     }
     
     // Store the variable in execution context
-    if (!execution.results.variables) {
-      execution.results.variables = {};
-    }
-    execution.results.variables[variableName] = variableValue;
+    this.setVariable(variableName, variableValue, execution);
     
     // Add a log entry
     execution.logs.push({
@@ -464,13 +799,94 @@ const workflowEngine = {
   async replaceVariables(text, execution) {
     if (!text) return text;
     
-    // Get variables from execution context
-    const variables = execution.results.variables || {};
-    
     // Replace {{varName}} with variable values
-    return text.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
-      return variables[varName] !== undefined ? variables[varName] : match;
+    return text.replace(/\{\{([\w.]+)\}\}/g, (match, path) => {
+      const value = this.getVariableByPath(path, execution);
+      return value !== undefined ? value : match;
     });
+  },
+  
+  /**
+   * Get a variable value by path (e.g., "user.firstName")
+   * @param {string} path - Variable path
+   * @param {Execution} execution - Current execution
+   * @returns {any} - Variable value
+   */
+  getVariableByPath(path, execution) {
+    if (!path) return undefined;
+    
+    const parts = path.split('.');
+    
+    // Handle system, workflow, and user variables
+    if (parts.length === 2) {
+      const [category, name] = parts;
+      
+      if (category === 'system' || category === 'workflow' || category === 'user') {
+        return execution.results.variables?.[category]?.[name];
+      }
+    }
+    
+    // Default behavior - check if it's a direct variable in user space
+    return execution.results.variables?.user?.[path];
+  },
+  
+  /**
+   * Get variable value or return literal
+   * @param {string} input - Variable path or literal value
+   * @param {Execution} execution - Current execution
+   * @returns {any} - Variable value or literal
+   */
+  async getVariableOrLiteral(input, execution) {
+    // Check if input is a variable reference
+    if (input && typeof input === 'string' && input.includes('.')) {
+      return this.getVariableByPath(input, execution);
+    }
+    
+    // Otherwise, treat as literal
+    return input;
+  },
+  
+  /**
+   * Helper to get a variable value (handles direct variables without categories)
+   * @param {string} name - Variable name or path
+   * @param {Execution} execution - Current execution
+   * @returns {any} - Variable value
+   */
+  async getVariableValue(name, execution) {
+    // If name contains a dot, it's a path
+    if (name.includes('.')) {
+      return this.getVariableByPath(name, execution);
+    }
+    
+    // Otherwise, check user variables
+    return execution.results.variables?.user?.[name];
+  },
+  
+  /**
+   * Set a variable in the execution context
+   * @param {string} name - Variable name
+   * @param {any} value - Variable value
+   * @param {Execution} execution - Current execution
+   */
+  setVariable(name, value, execution) {
+    // Handle variable paths (e.g., "user.firstName")
+    if (name.includes('.')) {
+      const [category, varName] = name.split('.');
+      
+      // Make sure the category exists
+      if (!execution.results.variables[category]) {
+        execution.results.variables[category] = {};
+      }
+      
+      execution.results.variables[category][varName] = value;
+    } else {
+      // Default to user variables
+      if (!execution.results.variables.user) {
+        execution.results.variables.user = {};
+      }
+      
+      execution.results.variables.user[name] = value;
+    }
   },
   
   /**

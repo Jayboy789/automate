@@ -1,4 +1,4 @@
-// models/Workflow.js
+// server/models/Workflow.js
 const mongoose = require('mongoose');
 
 // Check if the model already exists to prevent duplicate model error
@@ -66,6 +66,18 @@ const Workflow = mongoose.models.Workflow || (() => {
     isActive: {
       type: Boolean,
       default: true
+    },
+    variables: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    },
+    tags: [{
+      type: String,
+      trim: true
+    }],
+    category: {
+      type: String,
+      trim: true
     },
     createdAt: {
       type: Date,

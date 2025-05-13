@@ -1,4 +1,4 @@
-// models/Execution.js
+// server/models/Execution.js
 const mongoose = require('mongoose');
 
 // Check if the model already exists to prevent duplicate model error
@@ -41,8 +41,21 @@ const Execution = mongoose.models.Execution || (() => {
     }],
     results: {
       type: mongoose.Schema.Types.Mixed,
-      default: {}
+      default: {
+        variables: {
+          system: {},
+          workflow: {},
+          user: {}
+        }
+      }
     },
+    executedNodes: [{
+      nodeId: String,
+      startedAt: Date,
+      completedAt: Date,
+      status: String,
+      outputs: mongoose.Schema.Types.Mixed
+    }],
     error: {
       message: String,
       stack: String,
