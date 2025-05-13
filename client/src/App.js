@@ -27,6 +27,13 @@ import ExecutionDetails from './components/executions/ExecutionDetails';
 import { AuthProvider } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
 
+
+import './App.css';
+import './styles/navbar.css';
+import './styles/sidebar.css';
+import './styles/dashboard.css';
+import './styles/workflow-nodes.css'; 
+
 // Create theme
 const theme = createTheme({
   palette: {
