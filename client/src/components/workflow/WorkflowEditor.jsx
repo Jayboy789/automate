@@ -13,7 +13,7 @@ import 'reactflow/dist/style.css';
 
 import { getWorkflow, updateWorkflow, createWorkflow, executeWorkflow } from '../../services/api';
 import { useSocket } from '../../contexts/SocketContext';
-import { nodeTypes } from './nodes/nodeTypes';
+import nodeTypes from './nodes/nodeTypes';
 import NodePanel from './NodePanel';
 import PropertiesPanel from './PropertiesPanel';
 
@@ -47,7 +47,6 @@ const WorkflowEditor = () => {
   const [unsavedChanges, setUnsavedChanges] = useState(false);
   
   // Load workflow data
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const loadWorkflow = async () => {
       setIsLoading(true);
@@ -100,7 +99,6 @@ const WorkflowEditor = () => {
   }, [id]);
   
   // Listen for workflow execution updates
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!workflow) return;
     

@@ -9,7 +9,7 @@ import LoopNode from './LoopNode';
 import TransformNode from './TransformNode';
 
 // Node types map for React Flow
-export const nodeTypes = {
+const nodeTypes = {
   scriptNode: ScriptNode,
   conditionNode: ConditionNode,
   waitNode: WaitNode,
