@@ -63,14 +63,19 @@ const AgentsList = () => {
     try {
       const result = await createAgent();
       
+      // Validate the result structure before using it
+      if (!result || !result.agent || !result.agent.agentId) {
+        throw new Error('Invalid response from server. Missing agent data.');
+      }
+      
       // Add to list
-      setAgents([result.agent, ...agents]);
+      setAgents(prevAgents => [result.agent, ...prevAgents]);
       
       // Store for display
       setNewAgent({
         agentId: result.agent.agentId,
         agentKey: result.agent.agentKey,
-        name: result.agent.name
+        name: result.agent.name || `Agent-${result.agent.agentId.substring(0, 8)}`
       });
     } catch (err) {
       console.error('Error creating agent:', err);
@@ -169,7 +174,7 @@ const AgentsList = () => {
   if (loading) {
     return <div className="loading">Loading agents...</div>;
   }
-  
+
   return (
     <div className="agents-page">
       <div className="page-header">
